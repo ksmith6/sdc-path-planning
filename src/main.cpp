@@ -159,6 +159,10 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 
 }
 
+void driveStraight() { 
+
+}
+
 int main() {
   uWS::Hub h;
 
@@ -238,6 +242,43 @@ int main() {
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
 
+            
+
+            /* ===========================================================================
+            // DRIVE IN A STRAIGHT LINE LOGIC 
+            double dist_inc = 0.1;
+            for(int i = 0; i < 50; i++)
+            {
+                  next_x_vals.push_back(car_x+(dist_inc*i)*cos(deg2rad(car_yaw)));
+                  next_y_vals.push_back(car_y+(dist_inc*i)*sin(deg2rad(car_yaw)));
+            }
+            ==============================================================================
+            */ 
+
+            /* 
+            =================================================================
+            Simple lane following logic.
+            ====================================================================
+            */
+            // Try tracking the fast lane.
+            const double LANE_WIDTH = 4.0; // meters
+            double target_lane = 1.0;
+            double target_d = LANE_WIDTH * (0.5 + target_lane);
+            //vector<double> next_d_vals;
+            //vector<double> next_s_vals;
+            double dist_inc = 0.4;
+            for(int i = 0; i < 50; i++)
+            {
+                double target_s = car_s + dist_inc*i;
+                vector<double> xy = getXY(target_s, target_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+                cout << "target_s = " << target_s << "m | target_d = " << target_d << "m  | ";
+                cout << "xy[0] = " << xy[0] << " | xy[1] = " << xy[1] << endl;
+                next_x_vals.push_back(xy[0]);
+                next_y_vals.push_back(xy[1]);
+            }
+            cout << endl << endl;
+
+            //cout << "s = " << car_s << "m | d = " << car_d << "m" << endl;
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           	msgJson["next_x"] = next_x_vals;
