@@ -10,7 +10,11 @@
 #include "json.hpp"
 #include "spline.h"
 
+#include "Eigen-3.3/Eigen/LU"
+
 using namespace std;
+using Eigen::MatrixXd;
+using Eigen::VectorXd;
 
 // for convenience
 using json = nlohmann::json;
@@ -287,6 +291,34 @@ vector<vector<double>> drive_in_a_circle(double car_x, double car_y, double car_
       pos_y += (dist_inc)*sin(angle+(i+1)*(pi()/100));
   }
   return {next_x_vals, next_y_vals};
+}
+
+/*
+  Utility function to compute the 6th order polynomial coefficents for a jerk-minimal trajectory between two points over some duration T.
+*/
+vector<double> min_jerk_trajectory(double x_i, double v_i, double a_i, double x_f, double v_f, double a_f, double T) {
+
+  MatrixXd A = MatrixXd(3, 3);
+  A << T*T*T, T*T*T*T, T*T*T*T*T,
+          3*T*T, 4*T*T*T,5*T*T*T*T,
+          6*T, 12*T*T, 20*T*T*T;
+    
+  MatrixXd B = MatrixXd(3,1);     
+  B << x_f-(x_i + v_i*T + 0.5*a_i*T*T),
+          v_f - (v_i + a_i*T),
+          a_f - a_i;
+          
+  MatrixXd Ai = A.inverse();
+  
+  MatrixXd C = Ai*B;
+  
+  vector <double> result = {x_i, v_i, .5*a_i};
+  for(int i = 0; i < C.size(); i++)
+  {
+      result.push_back(C.data()[i]);
+  }
+  
+  return result;
 }
 
 int main() {
