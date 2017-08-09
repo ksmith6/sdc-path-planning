@@ -20,6 +20,10 @@ constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
 
+// Global constants
+const double MAX_S = 6945.554; // meters
+const double LANE_WIDTH = 4.0; // meters
+
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
 // else the empty string "" will be returned.
@@ -160,6 +164,131 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 
 }
 
+/*
+  ===== Prototype Lane Following Behavior ======
+  This is my first attempt at tracking a particular lane while commanding a constant velocity in Frenet coordinates.
+  The resulting trajectories are very jerky as the trajectory is not smoothed at all.
+*/
+vector<vector<double>> laneFollowing(double car_s, vector<double> previous_path_x, vector<double> previous_path_y, 
+                                      vector<double> map_waypoints_x, vector<double> map_waypoints_y, vector<double> map_waypoints_s, bool verbose)
+{
+  
+  double target_lane = 1.0;
+  double target_d = LANE_WIDTH * (0.5 + target_lane);
+  //vector<double> next_d_vals;
+  //vector<double> next_s_vals;
+  double dist_inc = 0.5;
+
+  int path_size = previous_path_x.size();
+
+  if (verbose) {cout << "Adding " << path_size << " elements from previous path." << endl << "Previous elements: " << endl;}
+
+
+  vector<double> next_x_vals;
+  vector<double> next_y_vals;
+  // Copy previous path points 
+  for(int i = 0; i < path_size; i++) {
+
+      if (verbose) { cout << "#" << i << "(" << previous_path_x[i] << "," << previous_path_y[i] << ")" << endl; }
+      next_x_vals.push_back(previous_path_x[i]);
+      next_y_vals.push_back(previous_path_y[i]);
+  }
+
+  // Get last state from previous points, if it exists.
+  double prev_s;
+  if (path_size == 0) {
+    prev_s = car_s;
+  } else {
+    double y1 = previous_path_y[path_size-1];
+    double y2 = previous_path_y[path_size-2];
+    double x1 = previous_path_y[path_size-1];
+    double x2 = previous_path_y[path_size-2];
+    double prev_yaw = atan2(y1-y2, x1-x2); 
+    vector<double> sd = getFrenet(previous_path_x[path_size-1], previous_path_y[path_size-1], prev_yaw, map_waypoints_x, map_waypoints_y);
+    prev_s = sd[0];
+  }
+
+  // Generate new points that simply follow the centerline of the target lane.  No smoothing is performed.
+  if (verbose) { cout << "New points:" << endl; }
+  for(int i = 1; i < 50 - path_size; i++)
+  {
+      // Ensure wraparound when crossing the MAX_S boundary.
+      double target_s = fmod(prev_s + dist_inc*i, MAX_S);
+      vector<double> xy = getXY(target_s, target_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+      if (verbose) {
+        cout << "target_s = " << target_s << "m | target_d = " << target_d << "m  | ";
+        cout << "xy[0] = " << xy[0] << " | xy[1] = " << xy[1] << endl;
+      }
+      next_x_vals.push_back(xy[0]);
+      next_y_vals.push_back(xy[1]);
+  }
+
+  if (verbose) { cout << "------------" << endl << endl; }
+  return {next_x_vals, next_y_vals};
+} 
+
+/*
+  Initial demonstration code for driving in a straight line in the simulator.
+*/
+vector<vector<double>> straightLine(double car_x, double car_y, double car_yaw) {
+  double dist_inc = 0.1;
+
+  vector<double> next_x_vals;
+  vector<double> next_y_vals;
+  for(int i = 0; i < 50; i++)
+  {
+    next_x_vals.push_back(car_x+(dist_inc*i)*cos(deg2rad(car_yaw)));
+    next_y_vals.push_back(car_y+(dist_inc*i)*sin(deg2rad(car_yaw)));
+  }
+  return {next_x_vals, next_y_vals};
+}
+
+/*
+  Initial demonstration code for driving in a circle in the simulator.  
+*/
+vector<vector<double>> drive_in_a_circle(double car_x, double car_y, double car_yaw, vector<double> previous_path_x, vector<double> previous_path_y) {
+  
+  double pos_x;
+  double pos_y;
+  double angle;
+  int path_size = previous_path_x.size();
+
+  vector<double> next_x_vals;
+  vector<double> next_y_vals;
+
+  for(int i = 0; i < path_size; i++)
+  {
+      next_x_vals.push_back(previous_path_x[i]);
+      next_y_vals.push_back(previous_path_y[i]);
+  }
+
+  if(path_size == 0)
+  {
+      pos_x = car_x;
+      pos_y = car_y;
+      angle = deg2rad(car_yaw);
+  }
+  else
+  {
+      pos_x = previous_path_x[path_size-1];
+      pos_y = previous_path_y[path_size-1];
+
+      double pos_x2 = previous_path_x[path_size-2];
+      double pos_y2 = previous_path_y[path_size-2];
+      angle = atan2(pos_y-pos_y2,pos_x-pos_x2);
+  }
+
+  double dist_inc = 0.5;
+  for(int i = 0; i < 50-path_size; i++)
+  {    
+      next_x_vals.push_back(pos_x+(dist_inc)*cos(angle+(i+1)*(pi()/100)));
+      next_y_vals.push_back(pos_y+(dist_inc)*sin(angle+(i+1)*(pi()/100)));
+      pos_x += (dist_inc)*cos(angle+(i+1)*(pi()/100));
+      pos_y += (dist_inc)*sin(angle+(i+1)*(pi()/100));
+  }
+  return {next_x_vals, next_y_vals};
+}
+
 int main() {
   uWS::Hub h;
 
@@ -238,125 +367,13 @@ int main() {
 
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
-
             
 
-            /* ===========================================================================
-            // DRIVE IN A STRAIGHT LINE LOGIC 
-            ==============================================================================
-            */ 
-            /*
-            {
-              double dist_inc = 0.1;
-              for(int i = 0; i < 50; i++)
-              {
-                    next_x_vals.push_back(car_x+(dist_inc*i)*cos(deg2rad(car_yaw)));
-                    next_y_vals.push_back(car_y+(dist_inc*i)*sin(deg2rad(car_yaw)));
-              }
-            }
-            */
-            
+            vector<vector<double>> path = laneFollowing(car_s, previous_path_x, previous_path_y, 
+                                      map_waypoints_x, map_waypoints_y, map_waypoints_s, false);
+            next_x_vals = path[0];
+            next_y_vals = path[1];
 
-            /* 
-            =================================================================
-            Simple lane following logic.
-            ====================================================================
-            */
-            // Try tracking the fast lane.
-            
-            {
-              const double MAX_S = 6945.554;
-              const double LANE_WIDTH = 4.0; // meters
-              double target_lane = 1.0;
-              double target_d = LANE_WIDTH * (0.5 + target_lane);
-              //vector<double> next_d_vals;
-              //vector<double> next_s_vals;
-              double dist_inc = 0.5;
-
-              int path_size = previous_path_x.size();
-
-              cout << "Adding " << path_size << " elements from previous path." << endl << "Previous elements: " << endl;
-
-              for(int i = 0; i < path_size; i++) {
-                  cout << "#" << i << "(" << previous_path_x[i] << "," << previous_path_y[i] << ")" << endl;
-                  next_x_vals.push_back(previous_path_x[i]);
-                  next_y_vals.push_back(previous_path_y[i]);
-              }
-
-              double prev_s;
-              if (path_size == 0) {
-                prev_s = car_s;
-              } else {
-                double y1 = previous_path_y[path_size-1];
-                double y2 = previous_path_y[path_size-2];
-                double x1 = previous_path_y[path_size-1];
-                double x2 = previous_path_y[path_size-2];
-                double prev_yaw = atan2(y1-y2, x1-x2); 
-                vector<double> sd = getFrenet(previous_path_x[path_size-1], previous_path_y[path_size-1], prev_yaw, map_waypoints_x, map_waypoints_y);
-                prev_s = sd[0];
-              }
-
-              cout << "New points:" << endl;
-              for(int i = 1; i < 50 - path_size; i++)
-              {
-                  // Ensure wraparound when crossing the MAX_S boundary.
-                  double target_s = (prev_s + dist_inc*i) % MAX_S;
-                  vector<double> xy = getXY(target_s, target_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-                  cout << "target_s = " << target_s << "m | target_d = " << target_d << "m  | ";
-                  cout << "xy[0] = " << xy[0] << " | xy[1] = " << xy[1] << endl;
-                  next_x_vals.push_back(xy[0]);
-                  next_y_vals.push_back(xy[1]);
-              }
-
-              cout << "------------" << endl << endl;
-            }
-            
-            
-
-            /*
-              Circular Driving Example
-              */
-            /*
-            {
-              
-              double pos_x;
-              double pos_y;
-              double angle;
-              int path_size = previous_path_x.size();
-
-              for(int i = 0; i < path_size; i++)
-              {
-                  next_x_vals.push_back(previous_path_x[i]);
-                  next_y_vals.push_back(previous_path_y[i]);
-              }
-
-              if(path_size == 0)
-              {
-                  pos_x = car_x;
-                  pos_y = car_y;
-                  angle = deg2rad(car_yaw);
-              }
-              else
-              {
-                  pos_x = previous_path_x[path_size-1];
-                  pos_y = previous_path_y[path_size-1];
-
-                  double pos_x2 = previous_path_x[path_size-2];
-                  double pos_y2 = previous_path_y[path_size-2];
-                  angle = atan2(pos_y-pos_y2,pos_x-pos_x2);
-              }
-
-              double dist_inc = 0.5;
-              for(int i = 0; i < 50-path_size; i++)
-              {    
-                  next_x_vals.push_back(pos_x+(dist_inc)*cos(angle+(i+1)*(pi()/100)));
-                  next_y_vals.push_back(pos_y+(dist_inc)*sin(angle+(i+1)*(pi()/100)));
-                  pos_x += (dist_inc)*cos(angle+(i+1)*(pi()/100));
-                  pos_y += (dist_inc)*sin(angle+(i+1)*(pi()/100));
-              }
-            }
-            */
-            //cout << "s = " << car_s << "m | d = " << car_d << "m" << endl;
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           	msgJson["next_x"] = next_x_vals;
