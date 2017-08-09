@@ -8,6 +8,7 @@
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
+#include "spline.h"
 
 using namespace std;
 
@@ -159,10 +160,6 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 
 }
 
-void driveStraight() { 
-
-}
-
 int main() {
   uWS::Hub h;
 
@@ -246,14 +243,19 @@ int main() {
 
             /* ===========================================================================
             // DRIVE IN A STRAIGHT LINE LOGIC 
-            double dist_inc = 0.1;
-            for(int i = 0; i < 50; i++)
-            {
-                  next_x_vals.push_back(car_x+(dist_inc*i)*cos(deg2rad(car_yaw)));
-                  next_y_vals.push_back(car_y+(dist_inc*i)*sin(deg2rad(car_yaw)));
-            }
             ==============================================================================
             */ 
+            /*
+            {
+              double dist_inc = 0.1;
+              for(int i = 0; i < 50; i++)
+              {
+                    next_x_vals.push_back(car_x+(dist_inc*i)*cos(deg2rad(car_yaw)));
+                    next_y_vals.push_back(car_y+(dist_inc*i)*sin(deg2rad(car_yaw)));
+              }
+            }
+            */
+            
 
             /* 
             =================================================================
@@ -261,23 +263,99 @@ int main() {
             ====================================================================
             */
             // Try tracking the fast lane.
-            const double LANE_WIDTH = 4.0; // meters
-            double target_lane = 1.0;
-            double target_d = LANE_WIDTH * (0.5 + target_lane);
-            //vector<double> next_d_vals;
-            //vector<double> next_s_vals;
-            double dist_inc = 0.4;
-            for(int i = 0; i < 50; i++)
+            
             {
-                double target_s = car_s + dist_inc*i;
-                vector<double> xy = getXY(target_s, target_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-                cout << "target_s = " << target_s << "m | target_d = " << target_d << "m  | ";
-                cout << "xy[0] = " << xy[0] << " | xy[1] = " << xy[1] << endl;
-                next_x_vals.push_back(xy[0]);
-                next_y_vals.push_back(xy[1]);
-            }
-            cout << endl << endl;
+              const double MAX_S = 6945.554;
+              const double LANE_WIDTH = 4.0; // meters
+              double target_lane = 1.0;
+              double target_d = LANE_WIDTH * (0.5 + target_lane);
+              //vector<double> next_d_vals;
+              //vector<double> next_s_vals;
+              double dist_inc = 0.5;
 
+              int path_size = previous_path_x.size();
+
+              cout << "Adding " << path_size << " elements from previous path." << endl << "Previous elements: " << endl;
+
+              for(int i = 0; i < path_size; i++) {
+                  cout << "#" << i << "(" << previous_path_x[i] << "," << previous_path_y[i] << ")" << endl;
+                  next_x_vals.push_back(previous_path_x[i]);
+                  next_y_vals.push_back(previous_path_y[i]);
+              }
+
+              double prev_s;
+              if (path_size == 0) {
+                prev_s = car_s;
+              } else {
+                double y1 = previous_path_y[path_size-1];
+                double y2 = previous_path_y[path_size-2];
+                double x1 = previous_path_y[path_size-1];
+                double x2 = previous_path_y[path_size-2];
+                double prev_yaw = atan2(y1-y2, x1-x2); 
+                vector<double> sd = getFrenet(previous_path_x[path_size-1], previous_path_y[path_size-1], prev_yaw, map_waypoints_x, map_waypoints_y);
+                prev_s = sd[0];
+              }
+
+              cout << "New points:" << endl;
+              for(int i = 1; i < 50 - path_size; i++)
+              {
+                  // Ensure wraparound when crossing the MAX_S boundary.
+                  double target_s = (prev_s + dist_inc*i) % MAX_S;
+                  vector<double> xy = getXY(target_s, target_d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+                  cout << "target_s = " << target_s << "m | target_d = " << target_d << "m  | ";
+                  cout << "xy[0] = " << xy[0] << " | xy[1] = " << xy[1] << endl;
+                  next_x_vals.push_back(xy[0]);
+                  next_y_vals.push_back(xy[1]);
+              }
+
+              cout << "------------" << endl << endl;
+            }
+            
+            
+
+            /*
+              Circular Driving Example
+              */
+            /*
+            {
+              
+              double pos_x;
+              double pos_y;
+              double angle;
+              int path_size = previous_path_x.size();
+
+              for(int i = 0; i < path_size; i++)
+              {
+                  next_x_vals.push_back(previous_path_x[i]);
+                  next_y_vals.push_back(previous_path_y[i]);
+              }
+
+              if(path_size == 0)
+              {
+                  pos_x = car_x;
+                  pos_y = car_y;
+                  angle = deg2rad(car_yaw);
+              }
+              else
+              {
+                  pos_x = previous_path_x[path_size-1];
+                  pos_y = previous_path_y[path_size-1];
+
+                  double pos_x2 = previous_path_x[path_size-2];
+                  double pos_y2 = previous_path_y[path_size-2];
+                  angle = atan2(pos_y-pos_y2,pos_x-pos_x2);
+              }
+
+              double dist_inc = 0.5;
+              for(int i = 0; i < 50-path_size; i++)
+              {    
+                  next_x_vals.push_back(pos_x+(dist_inc)*cos(angle+(i+1)*(pi()/100)));
+                  next_y_vals.push_back(pos_y+(dist_inc)*sin(angle+(i+1)*(pi()/100)));
+                  pos_x += (dist_inc)*cos(angle+(i+1)*(pi()/100));
+                  pos_y += (dist_inc)*sin(angle+(i+1)*(pi()/100));
+              }
+            }
+            */
             //cout << "s = " << car_s << "m | d = " << car_d << "m" << endl;
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
