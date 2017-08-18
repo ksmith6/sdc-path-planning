@@ -403,6 +403,31 @@ int main() {
 
             int prev_size = previous_path_x.size();
 
+            if (prev_size > 0) {
+              car_s = end_path_s;
+            }
+
+            bool too_close = false;
+            for (int i=0; i<sensor_fusion.size(); i++) {
+              float d = sensor_fusion[i][6];
+              bool in_my_lane = d<(2+4*lane+2) && d > (2+4*lane-2);
+              if (in_my_lane) {
+                // car is in my lane.
+                double vx = sensor_fusion[i][3];
+                double vy = sensor_fusion[i][4];
+                double check_speed = sqrt(vx*vx + vy*vy);
+                double check_car_s = sensor_fusion[i][5];
+
+                check_car_s += ((double) prev_size)*0.02*check_speed;
+                bool inFront = check_car_s > car_s;
+                double relRange = check_car_s-car_s;
+                if (inFront && relRange < 30) {
+                  ref_vel = 29.5;
+                  // too_close = true;
+                }
+              }
+            }
+
 
             vector<double> ptsx, ptsy;
             double ref_x = car_x;
