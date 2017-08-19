@@ -321,6 +321,13 @@ vector<double> min_jerk_trajectory(double x_i, double v_i, double a_i, double x_
   return result;
 }
 
+
+bool safeToEnterLane(int initLane, int targetLane, vector<vector<double>> sensor_fusion) {
+  // TODO
+  return false;
+}
+
+
 int main() {
   uWS::Hub h;
 
@@ -407,7 +414,9 @@ int main() {
               car_s = end_path_s;
             }
 
+            double M_TO_MPH = 2.24;
             bool too_close = false;
+
             double speed_constraint = 49.5; // mph
             for (int i=0; i<sensor_fusion.size(); i++) {
               float d = sensor_fusion[i][6];
@@ -422,11 +431,12 @@ int main() {
                 check_car_s += ((double) prev_size)*0.02*check_speed;
                 bool inFront = check_car_s > car_s;
                 double relRange = check_car_s-car_s;
-                if (inFront && relRange < 30) {
-                  //ref_vel = 29.5;
-                  too_close = true;
-                  speed_constraint = check_speed;
-
+                if (inFront && relRange < 50) {
+                  // Start slowing down to match leader speed
+                  speed_constraint = min(speed_constraint, check_speed * M_TO_MPH);
+                  if (relRange < 30) {
+                    too_close = true;
+                  }
                 }
               }
             }
@@ -437,8 +447,22 @@ int main() {
               bool canPassLeft = lane > 0;
               bool canPassRight = lane < 2;
 
-              bool safeToPassLeft = false; // TODO
-              bool safeToPassRight = false; // TODO
+              bool safeToPassLeft;
+
+              if (canPassLeft) {
+                // Is it safe to pass in nextmost left lane given current traffic conditions?
+                safeToPassLeft = safeToEnterLane(lane, lane-1, sensor_fusion);
+              } else {
+                // Already is left lane, so cannot pass on left.
+                safeToPassLeft = false;
+              }
+              bool safeToPassRight;
+              if (canPassRight) {
+                // Is it safe to pass in nextmost right lane given current traffic conditions?
+                safeToPassRight = safeToEnterLane(lane, lane+1, sensor_fusion);
+              } else {
+                safeToPassRight = false;
+              }
 
               if (canPassLeft && safeToPassLeft) {
                 // Pass on the left
@@ -447,7 +471,7 @@ int main() {
                 // Pass on the right
                 lane += 1;
               } else {
-                // Not yet safe to pass, so just maintain safe speed.
+                // Not yet safe to pass, so just maintain safe speed in current lane.
 
                 if (ref_vel >= speed_constraint) {
                   ref_vel -= 0.244;
