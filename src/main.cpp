@@ -325,7 +325,8 @@ vector<double> min_jerk_trajectory(double x_i, double v_i, double a_i, double x_
 /*
   Function to determine if it is safe to switch from current lane to next lane.
 */
-bool safeToEnterLane(double car_s, double car_speed, int targetLane, vector<vector<double>> sensor_fusion) {
+bool safeToEnterLane(double car_s, double car_speed, int targetLane, 
+  vector<vector<double>> sensor_fusion, double minSepDistance) {
   
   bool isSafeToEnter = true;
   for (int i=0; i<sensor_fusion.size(); i++) {
@@ -338,9 +339,16 @@ bool safeToEnterLane(double car_s, double car_speed, int targetLane, vector<vect
     double check_car_s = sensor_fusion[i][5];
 
     // Compute the relative range.
-    double relRange = check_car_s-car_s;
+    double relRange = car_s-check_car_s;
 
-    if (in_target_lane && fabs(relRange) < 20) {
+    double otherCarSpeed = sqrt(sensor_fusion[i][3]*sensor_fusion[i][3] + 
+                                sensor_fusion[i][4]*sensor_fusion[i][4]);
+    double otherCarRelSpeed = otherCarSpeed - car_speed;
+    double timeToIntercept = relRange / otherCarRelSpeed;
+
+    bool collisionImminent = fabs(timeToIntercept) < 5; // seconds
+
+    if (in_target_lane && (fabs(relRange) < minSepDistance)) { // || collisionImminent)) {
       /* If there's a car within 20 meters of our current position in 
       the target lane, don't switch lanes. */
       isSafeToEnter = false;
@@ -439,7 +447,7 @@ int main() {
             }
 
             double M_TO_MPH = 2.24;
-            bool too_close = false;
+            bool obstacleDetected = false;
 
 
             double speed_constraint = MAX_SPEED; // mph
@@ -458,22 +466,23 @@ int main() {
                 double relRange = check_car_s-car_s;
 
                 /* If there's a car in front of us and the 
-                separation distance is less than 50 meters, then begin 
+                separation distance is less than 30 meters, then begin 
                 tracking its speed (if it's slower than us). */
-                if (inFront && relRange < 50) {
+                if (inFront && relRange < 30) {
                   // Start slowing down to match leader speed
                   speed_constraint = min(speed_constraint, check_speed * M_TO_MPH);
                   
                   /* If we're more than 3mph below the max speed, the car in front has become 
                   an obstacle, so let's try to pass it. */
                   if (MAX_SPEED - speed_constraint > 3) {
-                    too_close = true;
+                    obstacleDetected = true;
                   }
                 }
               }
             }
 
-            if (too_close) {
+            /* Lane Switching Logic */
+            if (obstacleDetected) {
 
               // Check our lane to see if we can pass on left or right.
               bool canPassLeft = lane > 0;
@@ -484,7 +493,7 @@ int main() {
               /* If a left-pass is feasible, can we safely enter the left lane? */
               if (canPassLeft) {
                 // Is it safe to pass in nextmost left lane given current traffic conditions?
-                safeToPassLeft = safeToEnterLane(car_s, car_speed, lane-1, sensor_fusion);
+                safeToPassLeft = safeToEnterLane(car_s, car_speed, lane-1, sensor_fusion, 20);
               } else {
                 // Already is left lane, so cannot pass on left.
                 safeToPassLeft = false;
@@ -494,7 +503,7 @@ int main() {
               bool safeToPassRight;
               if (canPassRight) {
                 // Is it safe to pass in nextmost right lane given current traffic conditions?
-                safeToPassRight = safeToEnterLane(car_s, car_speed, lane+1, sensor_fusion);
+                safeToPassRight = safeToEnterLane(car_s, car_speed, lane+1, sensor_fusion, 20);
               } else {
                 safeToPassRight = false;
               }
@@ -518,8 +527,20 @@ int main() {
             } else {
               // No obstacles in path.  Just maintain speed.
               if (ref_vel < speed_constraint) {
+                cout << "  Accelerating to speed.";
                 ref_vel += 0.224;
               }
+
+
+              // Logic to prefer the far-right lane (slow lane), all things being equal.
+              bool prettyCloseToSpeedLimit = (MAX_SPEED - ref_vel) < 5; // mph
+              bool safeToGetOver = safeToEnterLane(car_s, car_speed, lane+1, sensor_fusion, 50);
+              if (lane < 2 && prettyCloseToSpeedLimit && safeToGetOver) {
+                lane += 1; // Switch lane to the right.
+                cout << " Changing lane to " << lane <<".";
+              }
+              cout << endl;
+
             }
 
 
