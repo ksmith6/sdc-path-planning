@@ -6,6 +6,7 @@ Kelly Smith - August 19, 2017
 
 ### Trajectory Generation
 **Rubric: The car stays in its lane, except for the time between changing lanes**
+
 **Rubric: The car stays in its lane, except for the time between changing lanes**
 
 For this project, I attempted to build the trajectory generation routine several times by implementing basic lane following.  However, I could not eliminate glitches in the resulting trajectory caused by the `getXY` routine.
