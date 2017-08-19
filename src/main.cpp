@@ -322,9 +322,32 @@ vector<double> min_jerk_trajectory(double x_i, double v_i, double a_i, double x_
 }
 
 
-bool safeToEnterLane(int initLane, int targetLane, vector<vector<double>> sensor_fusion) {
-  // TODO
-  return false;
+/*
+  Function to determine if it is safe to switch from current lane to next lane.
+*/
+bool safeToEnterLane(double car_s, double car_speed, int targetLane, vector<vector<double>> sensor_fusion) {
+  
+  bool isSafeToEnter = true;
+  for (int i=0; i<sensor_fusion.size(); i++) {
+    float d = sensor_fusion[i][6];
+
+    // Is the other car in our targeted lane?
+    bool in_target_lane = d < LANE_WIDTH*(targetLane+1) && d > LANE_WIDTH*(targetLane);
+
+    // Fetch the other car's s-coordinate in Frenet.
+    double check_car_s = sensor_fusion[i][5];
+
+    // Compute the relative range.
+    double relRange = check_car_s-car_s;
+
+    if (in_target_lane && fabs(relRange) < 20) {
+      /* If there's a car within 20 meters of our current position in 
+      the target lane, don't switch lanes. */
+      isSafeToEnter = false;
+    } 
+  }  
+
+  return isSafeToEnter;
 }
 
 
@@ -368,8 +391,9 @@ int main() {
   int lane = 1;
 
   double ref_vel = 0.0; // mph
+  const double MAX_SPEED = 49.5;
 
-  h.onMessage([&ref_vel, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&ref_vel, &MAX_SPEED, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -417,7 +441,8 @@ int main() {
             double M_TO_MPH = 2.24;
             bool too_close = false;
 
-            double speed_constraint = 49.5; // mph
+
+            double speed_constraint = MAX_SPEED; // mph
             for (int i=0; i<sensor_fusion.size(); i++) {
               float d = sensor_fusion[i][6];
               bool in_my_lane = d<(2+4*lane+2) && d > (2+4*lane-2);
@@ -431,10 +456,17 @@ int main() {
                 check_car_s += ((double) prev_size)*0.02*check_speed;
                 bool inFront = check_car_s > car_s;
                 double relRange = check_car_s-car_s;
+
+                /* If there's a car in front of us and the 
+                separation distance is less than 50 meters, then begin 
+                tracking its speed (if it's slower than us). */
                 if (inFront && relRange < 50) {
                   // Start slowing down to match leader speed
                   speed_constraint = min(speed_constraint, check_speed * M_TO_MPH);
-                  if (relRange < 30) {
+                  
+                  /* If we're more than 3mph below the max speed, the car in front has become 
+                  an obstacle, so let's try to pass it. */
+                  if (MAX_SPEED - speed_constraint > 3) {
                     too_close = true;
                   }
                 }
@@ -449,26 +481,30 @@ int main() {
 
               bool safeToPassLeft;
 
+              /* If a left-pass is feasible, can we safely enter the left lane? */
               if (canPassLeft) {
                 // Is it safe to pass in nextmost left lane given current traffic conditions?
-                safeToPassLeft = safeToEnterLane(lane, lane-1, sensor_fusion);
+                safeToPassLeft = safeToEnterLane(car_s, car_speed, lane-1, sensor_fusion);
               } else {
                 // Already is left lane, so cannot pass on left.
                 safeToPassLeft = false;
               }
+
+              /* If a right-pass is feasible, can we safely enter the right lane? */
               bool safeToPassRight;
               if (canPassRight) {
                 // Is it safe to pass in nextmost right lane given current traffic conditions?
-                safeToPassRight = safeToEnterLane(lane, lane+1, sensor_fusion);
+                safeToPassRight = safeToEnterLane(car_s, car_speed, lane+1, sensor_fusion);
               } else {
                 safeToPassRight = false;
               }
 
+
               if (canPassLeft && safeToPassLeft) {
-                // Pass on the left
+                // Pass on the left, since it is feasible and safe.
                 lane -= 1;
               } else if (canPassRight && safeToPassRight) {
-                // Pass on the right
+                // Pass on the right, since it is feasible and safe.
                 lane += 1;
               } else {
                 // Not yet safe to pass, so just maintain safe speed in current lane.
@@ -487,13 +523,27 @@ int main() {
             }
 
 
+            /*
+            The algorithm below is reproduced from the Udacity Walkthrough video.
+
+            I had a tough time building my own from scratch without introducing 
+            hiccups in the path that would cause jerk and acceleration violations.
+
+            Therefore, I abandoned that work and just reproduced the Udacity 
+            version to have something functional.
+
+            */
             vector<double> ptsx, ptsy;
             double ref_x = car_x;
             double ref_y = car_d;
             double ref_yaw = (car_yaw);
           	
-            
+            /* Is this a cold start? */
             if (prev_size < 2) {
+              // Cold Start Logic
+
+              // Generate two anchors to constrain spline to honor current yaw.
+
               double prev_car_x = car_x - cos(car_yaw);
               double prev_car_y = car_y - sin(car_yaw);
 
@@ -503,6 +553,8 @@ int main() {
               ptsy.push_back(prev_car_y);
               ptsy.push_back(car_y);
             } else {
+              // Warm Start Logic
+              // Generate two anchors from the end of the previous path.
               ref_x = previous_path_x[prev_size-1];
               ref_y = previous_path_y[prev_size-1];
 
@@ -523,6 +575,7 @@ int main() {
             vector<double> next_wp1 = getXY(car_s+60, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
             vector<double> next_wp2 = getXY(car_s+90, (2+4*lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
           
+            // Add waypoints to anchor set.
             ptsx.push_back(next_wp0[0]);
             ptsx.push_back(next_wp1[0]);
             ptsx.push_back(next_wp2[0]);
@@ -532,7 +585,7 @@ int main() {
             ptsy.push_back(next_wp2[1]);
 
 
-            // Shift the car
+            // Translate and rotate the anchor points to help spline.h
             for (int i=0; i<ptsx.size(); i++) {
               double shift_x = ptsx[i] - ref_x;
               double shift_y = ptsy[i] - ref_y;
@@ -549,16 +602,17 @@ int main() {
             vector<double> next_x_vals;
             vector<double> next_y_vals;
 
+
+            /* Re-use the previous points from the previous path */
             for (int i=0; i<previous_path_x.size(); i++) {
               next_x_vals.push_back(previous_path_x[i]);
               next_y_vals.push_back(previous_path_y[i]);
             }
 
+            /* Generate new points from the spline based on the anchors */
             double target_x = 30.0;
             double target_y = s(target_x);
             double target_dist = sqrt(target_x*target_x + target_y*target_y);
-
-
 
             double x_add_on = 0.0;
             for (int i=1; i<=50 - previous_path_x.size(); i++) {
@@ -574,9 +628,11 @@ int main() {
               x_point = x_ref * cos(ref_yaw) - y_ref*sin(ref_yaw);
               y_point = x_ref * sin(ref_yaw) + y_ref*cos(ref_yaw);
 
+              // shift back.
               x_point += ref_x;
               y_point += ref_y;
 
+              // Add to final path vectors
               next_x_vals.push_back(x_point);
               next_y_vals.push_back(y_point);
             }
