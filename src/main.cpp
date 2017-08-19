@@ -408,6 +408,7 @@ int main() {
             }
 
             bool too_close = false;
+            double speed_constraint = 49.5; // mph
             for (int i=0; i<sensor_fusion.size(); i++) {
               float d = sensor_fusion[i][6];
               bool in_my_lane = d<(2+4*lane+2) && d > (2+4*lane-2);
@@ -424,20 +425,43 @@ int main() {
                 if (inFront && relRange < 30) {
                   //ref_vel = 29.5;
                   too_close = true;
-
-                  if (lane>0) {
-                    lane = 0;
-                  }
+                  speed_constraint = check_speed;
 
                 }
               }
             }
 
             if (too_close) {
-              ref_vel -= 0.224;
-            } else if (ref_vel < 49.5) {
-              ref_vel += 0.224;
+
+              // Check our lane to see if we can pass on left or right.
+              bool canPassLeft = lane > 0;
+              bool canPassRight = lane < 2;
+
+              bool safeToPassLeft = false; // TODO
+              bool safeToPassRight = false; // TODO
+
+              if (canPassLeft && safeToPassLeft) {
+                // Pass on the left
+                lane -= 1;
+              } else if (canPassRight && safeToPassRight) {
+                // Pass on the right
+                lane += 1;
+              } else {
+                // Not yet safe to pass, so just maintain safe speed.
+
+                if (ref_vel >= speed_constraint) {
+                  ref_vel -= 0.244;
+                }
+
+              }
+
+            } else {
+              // No obstacles in path.  Just maintain speed.
+              if (ref_vel < speed_constraint) {
+                ref_vel += 0.224;
+              }
             }
+
 
             vector<double> ptsx, ptsy;
             double ref_x = car_x;
